@@ -20,12 +20,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests websocket-client pynacl pyinstaller
 
-      - name: Build EXE with PyInstaller
+      - name: Build EXE
+        shell: pwsh
         run: |
-          pyinstaller --onefile --console --name StandX_Bot main.py
+          # 自動尋找第一個 Python 檔案，不管是 main.py 還是 bot.py 都能過
+          $targetFile = Get-ChildItem -Filter *.py | Select-Object -First 1 -ExpandProperty Name
+          if (-not $targetFile) { Write-Error "錯誤：資料夾內找不到任何 .py 檔案！"; exit 1 }
+          Write-Host "正在打包檔案: $targetFile"
+          pyinstaller --onefile --console --name ProcyonsBot $targetFile
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ProcyonsBot-EXE
-          path: dist/StandX_Bot.exe
+          path: dist/*.exe
