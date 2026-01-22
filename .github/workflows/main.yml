@@ -1,0 +1,67 @@
+# -*- coding: utf-8 -*-
+import requests, time, json, uuid, base64, os, sys, threading, math
+import websocket
+from datetime import datetime
+from nacl.signing import SigningKey
+from nacl.encoding import HexEncoder
+
+# 配置區 (請務必填寫，否則執行會報錯)
+CONFIG = {
+    "JWT": "你的JWT",
+    "SECRET": "你的私鑰",
+    "SYMBOL": "BTC-USD",
+    "QTY": "1.01",
+    "TARGET_BPS": 8,
+    "MIN_BPS": 7,
+    "MAX_BPS": 10
+}
+
+class StandXCMD:
+    def __init__(self):
+        self.base_url = "https://perps.standx.com"
+        self.ws_url = "wss://perps.standx.com/ws-stream/v1"
+        self.mid_price = 0.0
+        self.running = True
+        pk = CONFIG["SECRET"][2:] if CONFIG["SECRET"].startswith("0x") else CONFIG["SECRET"]
+        self.signer = SigningKey(pk, encoder=HexEncoder)
+        self.headers = {"Authorization": f"Bearer {CONFIG['JWT']}", "Content-Type": "application/json"}
+        self.start_ws()
+
+    def start_ws(self):
+        def on_msg(ws, msg):
+            d = json.loads(msg).get("data", {})
+            if "mid_price" in d: self.mid_price = float(d["mid_price"])
+        def run():
+            ws = websocket.WebSocketApp(self.ws_url, 
+                on_open=lambda ws: ws.send(json.dumps({"subscribe": {"channel": "price", "symbol": CONFIG["SYMBOL"]}})),
+                on_message=on_msg)
+            ws.run_forever()
+        threading.Thread(target=run, daemon=True).start()
+
+    def sign(self, body):
+        rid, ts = str(uuid.uuid4()), str(int(time.time() * 1000))
+        msg = f"v1,{rid},{ts},{body}"
+        sig = base64.b64encode(self.signer.sign(msg.encode()).signature).decode()
+        return {"x-request-sign-version": "v1", "x-request-id": rid, "x-request-timestamp": ts, "x-request-signature": sig}
+
+    def call(self, method, path, data=None):
+        try:
+            url = self.base_url + path
+            if method == "GET": return requests.get(url, headers=self.headers, timeout=2).json()
+            body = json.dumps(data)
+            return requests.post(url, data=body, headers={**self.headers, **self.sign(body)}, timeout=2).json()
+        except: return {}
+
+    def main_loop(self):
+        while self.running:
+            try:
+                if self.mid_price == 0: time.sleep(1); continue
+                os.system('cls' if os.name == 'nt' else 'clear')
+                print(f"StandX Bot Running... Price: {self.mid_price}")
+                # 這裡放你的掛單邏輯...
+                time.sleep(1)
+            except KeyboardInterrupt:
+                self.running = False; break
+
+if __name__ == "__main__":
+    StandXCMD().main_loop()
